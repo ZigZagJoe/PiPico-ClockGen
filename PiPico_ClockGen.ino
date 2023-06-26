@@ -8,6 +8,7 @@
 #include "pico/stdlib.h"
 
 #define MHZ2KHZ 1000
+#define SEARCH_RANGE (1*MHZ2KHZ)
 
 // initial frequency to use
 long currSpKhz = 50 * MHZ2KHZ;
@@ -24,28 +25,55 @@ void setup() {
 }
 
 void loop() {
-  Serial.print("Current speed: ");
+  Serial.println();
+  Serial.print("Current frequency: ");
   Serial.print(((float)currSpKhz) / MHZ2KHZ);
-  Serial.println(" MHZ");
-  Serial.println("Enter new clock frequency in MHZ (decimals OK)");
+  Serial.println(" MHz");
+  Serial.print("New frequency (decimal MHz): ");
 
-  Serial.setTimeout(60000);
-  
-  // read a line
-  String result = Serial.readStringUntil('\n');
+  String result = "";
+  char ch;
 
-  // not valid....
-  if (!result || !result.length())
-    return;
+  // read a string from serial, only allowing numeric, handling backspace and any line endings
+  while (result.length() < 10) {
+      if (Serial.available()) {
+        ch = (char)Serial.read();
+
+        // handle backspace
+        if (ch == 8 || ch == 127) {
+           if (result.length()) {
+             result = result.substring(0,result.length()-1);
+             // clear the last char
+             Serial.print("\x8 \x8");
+           }
+           continue;
+        }
+
+        // submit
+        if (ch == '\n' || ch =='\r') 
+          break;
+          
+        // filter only valid chars
+        if ((ch < '0' || ch > '9') && ch != '.')
+          continue;
+
+        result += ch;
+        Serial.print(ch);
+      }
+  }
+
+  Serial.println();
   
   float sp = result.toFloat();
 
-  if (!sp)
+  if (sp <= 0) {
+    Serial.println("Input out of range.");
     return;
+  }
 
   Serial.print("Input: ");
   Serial.print(sp);
-  Serial.println(" mhz");
+  Serial.println(" MHz");
 
   // convert float to speed in KHZ
   int spKhz = sp * MHZ2KHZ;
@@ -53,7 +81,28 @@ void loop() {
   // can we even reach this speed?
   uint vco, postdiv1, postdiv2;
   if (!check_sys_clock_khz(spKhz, &vco, &postdiv1, &postdiv2)) {
-      Serial.println("Clock speed is not attainable. Try a different value.");
+      Serial.print("Not possible: ");
+
+      // search for a nearby possible frequency
+      float freq = 0;
+      for (int s = 0; s < SEARCH_RANGE; s++) {
+          if (check_sys_clock_khz(spKhz+s, &vco, &postdiv1, &postdiv2)){
+              freq = ((float)(spKhz+s))/MHZ2KHZ;
+              break;
+          } else if (check_sys_clock_khz(spKhz-s, &vco, &postdiv1, &postdiv2)){
+              freq = ((float)(spKhz-s))/MHZ2KHZ;
+              break;
+          }
+      }
+
+      if (freq) {
+        Serial.print("Use ");
+        Serial.print(freq);
+        Serial.println(" MHz instead");
+      } else {
+        Serial.println("May be out of range.");
+      }
+      
       return;
   }
 
