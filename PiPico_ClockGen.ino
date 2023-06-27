@@ -8,7 +8,16 @@
 #include "pico/stdlib.h"
 
 #define MHZ2KHZ 1000
-#define SEARCH_RANGE (1*MHZ2KHZ)
+
+// range to search for attainable frequencies if input is invalid
+#define SEARCH_RANGE (2* MHZ2KHZ)
+
+// increment in KHZ to search
+#define SEARCH_INC 10
+
+#define MIN_FREQ  ( 18 * MHZ2KHZ)
+#define MAX_FREQ  (300 * MHZ2KHZ)
+#define OC_FREQ   (133 * MHZ2KHZ)
 
 // initial frequency to use
 long currSpKhz = 50 * MHZ2KHZ;
@@ -63,10 +72,14 @@ void loop() {
   }
 
   Serial.println();
-  
+
+  // convert to float, stopping at first invalid char
   float sp = result.toFloat();
 
-  if (sp <= 0) {
+  // convert float to speed in KHZ
+  int spKhz = sp * MHZ2KHZ;
+
+  if (spKhz < MIN_FREQ || spKhz > MAX_FREQ) {
     Serial.println("Input out of range.");
     return;
   }
@@ -75,9 +88,6 @@ void loop() {
   Serial.print(sp);
   Serial.println(" MHz");
 
-  // convert float to speed in KHZ
-  int spKhz = sp * MHZ2KHZ;
-
   // can we even reach this speed?
   uint vco, postdiv1, postdiv2;
   if (!check_sys_clock_khz(spKhz, &vco, &postdiv1, &postdiv2)) {
@@ -85,7 +95,7 @@ void loop() {
 
       // search for a nearby possible frequency
       float freq = 0;
-      for (int s = 0; s < SEARCH_RANGE; s++) {
+      for (int s = 0; s < SEARCH_RANGE; s+=SEARCH_INC) {
           if (check_sys_clock_khz(spKhz+s, &vco, &postdiv1, &postdiv2)){
               freq = ((float)(spKhz+s))/MHZ2KHZ;
               break;
@@ -106,8 +116,13 @@ void loop() {
       return;
   }
 
+  if (spKhz >= OC_FREQ)
+    Serial.println("NOTE: This frequency is overclocking.\nIf you don't see \"Done\" after setting, reset the board.");
+  
   // yup, looks good... final confirm
   Serial.println("Enter Y to set speed, anything else to abort.");
+  
+  
   while (!Serial.available()) ;
   
   if (Serial.read() == 'Y') {
